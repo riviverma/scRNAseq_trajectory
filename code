@@ -42,11 +42,12 @@ brc.seu[["percent.mt"]] <- PercentageFeatureSet(brc.seu, pattern = "^MT-")
 View(brc.seu@meta.data)
 
 #Visualize QC metrics as a violin plot:
-VlnPlot(brc.seu, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
-FeatureScatter(brc.seu, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") + geom_smooth(method = 'lm')
+VlnPlot(brc.seu, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3) #raw_data.png
+FeatureScatter(brc.seu, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") + geom_smooth(method = 'lm') #scatter_plot,png
 
 # 2. Filtering the cells:
 brc.seu <- subset(brc.seu, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 5)
+VlnPlot(brc.seu, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3) #qc.png
 
 # 3. Normalizing the data:
 #using a global-scaling normalization method “LogNormalize” that normalizes the feature expression measurements for each cell by the total expression, 
@@ -67,7 +68,7 @@ top10
 #plot top10 highly variable features
 plot1 <- VariableFeaturePlot(brc.seu)
 plot1
-LabelPoints(plot = plot1, points = top10, repel = TRUE)
+LabelPoints(plot = plot1, points = top10, repel = TRUE) #variable_features.png
 
 # 5. Scaling the data (linear transformation):
 # Shifts the expression of each gene, so that the mean expression across cells is 0 and variance across cells is 1
@@ -96,17 +97,17 @@ print(brc.seu[["pca"]], dims = 1:5, nfeatures = 5)
 #Negative:  TAGLN, ACTA2, RERGL, PLN, MYH11
 
 # visualize PCA results - Seurat provides several useful ways of visualizing both cells and features that define the PCA, including VizDimReduction(), DimPlot(), and DimHeatmap()
-DimPlot(brc.seu, reduction = 'pca')
-DimHeatmap(brc.seu, dims = 1, cells = 500, balanced = TRUE)
+DimPlot(brc.seu, reduction = 'pca') #pca_plot.png
+DimHeatmap(brc.seu, dims = 1, cells = 500, balanced = TRUE) #heatmap.png
 
 # determine dimensionality of the data
 #elbow plot: a ranking of principle components based on the percentage of variance explained by each one
-ElbowPlot(brc.seu)
+ElbowPlot(brc.seu) #elbow_plot.png
 #suggestion: majority of true signal is captured between 9-12 PCs
 
 #Non-linear dimensional reduction (UMAP)
 brc.seu <- RunUMAP(brc.seu, dims = 1:15)
-DimPlot(brc.seu, reduction = "umap")
+DimPlot(brc.seu, reduction = "umap") #umap_plot.png
 
 # 7. Clustering the cells:
 #The FindClusters() function implements this procedure, and contains a resolution parameter that sets the ‘granularity’ of the downstream clustering, 
@@ -118,7 +119,7 @@ brc.seu <- FindClusters(brc.seu, resolution = c(0.1,0.3, 0.5, 0.7, 0.9, 1))
 View(brc.seu@meta.data)
 #clusters can be found using the Idents() function
 head(Idents(brc.seu), 5)
-DimPlot(brc.seu, group.by = "RNA_snn_res.0.5", label = TRUE)
+DimPlot(brc.seu, group.by = "RNA_snn_res.0.5", label = TRUE) #cluster.png
 
 #assigning cell types to clusters:
 Idents(brc.seu) <- brc.seu$RNA_snn_res.0.5
@@ -126,7 +127,7 @@ new.cluster.ids <- c("B_Cells","CD4+ T-cells","CD8+ T-cells","dPVL","Endothelial
 "myCAFs","Myeloid","Myoepithelial","NK cells","NKT cells","Plasma_Cells","T-cells Cycling","T_cells_unassigned","Tfh cells","T-Regs")
 names(new.cluster.ids) <- levels(brc.seu)
 brc.seu <- RenameIdents(brc.seu, new.cluster.ids)
-DimPlot(brc.seu, reduction = 'umap', label = TRUE, pt.size = 0.2) + NoLegend()
+DimPlot(brc.seu, reduction = 'umap', label = TRUE, pt.size = 0.2) + NoLegend() #celltypes_clusters.png
 
 # Calculating Trajectories with Monocle3
 # monocle3 requires cell_data_set object
@@ -168,7 +169,7 @@ cluster.names <- plot_cells(cds,
            group_label_size = 5) +
   scale_color_manual(values = c('red', 'blue', 'green', 'maroon', 'yellow', 'grey', 'cyan', 'pink', 'orange', 'black', 'purple')) +
   theme(legend.position = "right")
-cluster.names
+cluster.names #partitions.png
 
 # 10. Learn trajectory graph:
 #how cells transition through a biological program of gene expression changes in an experiment
@@ -180,7 +181,7 @@ plot_cells(cds,
            label_branch_points = FALSE,
            label_roots = FALSE,
            label_leaves = FALSE,
-           group_label_size = 5)
+           group_label_size = 5) #learn_graph.png
 
 # 11. Order the cells in pseudotime:
 #Pseudotime is a measure of how much progress an individual cell has made through a process such as cell differentiation
@@ -192,14 +193,14 @@ plot_cells(cds,
            label_groups_by_cluster = FALSE,
            label_branch_points = FALSE,
            label_roots = FALSE,
-           label_leaves = FALSE)
+           label_leaves = FALSE) #pseudotime1.png
 
 # cells ordered by monocle3 pseudotime
 pseudotime(cds)
 cds$monocle3_pseudotime <- pseudotime(cds)
 data.pseudo <- as.data.frame(colData(cds))
 ggplot(data.pseudo, aes(monocle3_pseudotime, reorder(clusters(cds), monocle3_pseudotime, median), fill = clusters(cds))) + geom_boxplot()
-
+#reorder_pseudotime.png
 
 
 
