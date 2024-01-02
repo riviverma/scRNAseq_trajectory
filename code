@@ -1,0 +1,205 @@
+# script to perform trajectory analysis
+
+# Set working directory
+#setwd("C:/Users/Rivi/Desktop/scRNAseq_data/single_data_portal/")
+
+#Loading the required R packages:
+library(Seurat)
+library(SeuratWrappers)
+library(dplyr)
+library(tidyverse)
+library(patchwork)
+library(monocle3)
+library(ggplot2)
+
+# Load the breast cancer dataset:
+breast_sparse.m <- ReadMtx(mtx="Wu_EMBOJ_count_matrix_sparse.mtx", features="Wu_EMBOJ_genes.tsv", cells="Wu_EMBOJ_barcodes.tsv", feature.column=1)
+str(breast_sparse.m)
+
+# Initialize the Seurat object with the raw (non-normalized data):
+brc.obj <- CreateSeuratObject(counts = breast_sparse.m, min.cells = 3, min.features = 200) ##keeping all the features that are expressed atleast in 3 cells and all those cells that have atleast 200 features
+str(brc.obj)
+brc.obj
+#An object of class Seurat 
+#23975 features across 24271 samples within 1 assay 
+#Active assay: RNA (23975 features, 0 variable features)
+# 1 layer present: counts
+
+#selecting only one patient with ID=CID44041
+unique(brc.obj@meta.data$orig.ident)
+Idents(brc.obj) <- brc.obj$orig.ident
+brc.seu <- subset(brc.obj, idents = "CID44041")
+brc.seu
+#An object of class Seurat 
+#23975 features across 2019 samples within 1 assay 
+#Active assay: RNA (23975 features, 0 variable features)
+#1 layer present: counts
+
+# 1. QC filter (there are many QC metrics available in Seurat):
+#to remove low-quality cells, empty droplets or reads that map to the mitochondrial genome (QC metric: PercentageFeatureSet())
+View(brc.seu@meta.data)
+brc.seu[["percent.mt"]] <- PercentageFeatureSet(brc.seu, pattern = "^MT-")
+View(brc.seu@meta.data)
+
+#Visualize QC metrics as a violin plot:
+VlnPlot(brc.seu, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+FeatureScatter(brc.seu, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") + geom_smooth(method = 'lm')
+
+# 2. Filtering the cells:
+brc.seu <- subset(brc.seu, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 5)
+
+# 3. Normalizing the data:
+#using a global-scaling normalization method “LogNormalize” that normalizes the feature expression measurements for each cell by the total expression, 
+#multiplies this by a scale factor (10,000 by default), and log-transforms the result.
+brc.seu <- NormalizeData(brc.seu,normalization.method = "LogNormalize", scale.factor = 10000)
+str(brc.seu)
+
+# 4. Identification of highly variable features (feature selection):
+#calculating a subset of features that exhibit high cell-to-cell variation in the dataset
+brc.seu <- FindVariableFeatures(brc.seu, selection.method = "vst", nfeatures = 2000)
+
+# Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(brc.seu), 10)
+top10
+#[1] "CCL3"   "CCL3L3" "CXCL8"  "IL1B"   "KRT15"  "TFF3"   "ACTA2"  "LYZ"   
+ [9] "AZGP1"  "TFF1" 
+
+#plot top10 highly variable features
+plot1 <- VariableFeaturePlot(brc.seu)
+plot1
+LabelPoints(plot = plot1, points = top10, repel = TRUE)
+
+# 5. Scaling the data (linear transformation):
+# Shifts the expression of each gene, so that the mean expression across cells is 0 and variance across cells is 1
+all.genes <- rownames(brc.seu)
+brc.seu <- ScaleData(brc.seu, features = all.genes)
+#Centering and scaling data matrix
+
+# 6. Dimensionality reduction (using PCA):
+brc.seu <- RunPCA(brc.seu, features = VariableFeatures(object = brc.seu))
+print(brc.seu[["pca"]], dims = 1:5, nfeatures = 5)
+
+#PC_ 1 
+#Positive:  COL1A2, DCN, LUM, CALD1, MEG3 
+#Negative:  SRGN, CXCR4, LAPTM5, VAMP8, CD74 
+#PC_ 2 
+#Positive:  AZGP1, KRT8, KRT18, ANKRD30A, WFDC2 
+#Negative:  CXCR4, SRGN, CD69, LAPTM5, TRAC 
+#PC_ 3 
+#Positive:  TRAC, CD3D, IL32, TRBC2, CD2 
+#Negative:  MS4A6A, TYROBP, FCER1G, MS4A7, C1QA 
+#PC_ 4 
+#Positive:  TMEM176B, TYROBP, IGF1, CRABP2, MEG3 
+#Negative:  EMCN, ADGRL4, FABP4, AQP1, ECSCR.1 
+#PC_ 5 
+#Positive:  AQP1, VWF, ADGRL4, ITM2A, PLVAP 
+#Negative:  TAGLN, ACTA2, RERGL, PLN, MYH11
+
+# visualize PCA results - Seurat provides several useful ways of visualizing both cells and features that define the PCA, including VizDimReduction(), DimPlot(), and DimHeatmap()
+DimPlot(brc.seu, reduction = 'pca')
+DimHeatmap(brc.seu, dims = 1, cells = 500, balanced = TRUE)
+
+# determine dimensionality of the data
+#elbow plot: a ranking of principle components based on the percentage of variance explained by each one
+ElbowPlot(brc.seu)
+#suggestion: majority of true signal is captured between 9-12 PCs
+
+#Non-linear dimensional reduction (UMAP)
+brc.seu <- RunUMAP(brc.seu, dims = 1:15)
+DimPlot(brc.seu, reduction = "umap")
+
+# 7. Clustering the cells:
+#The FindClusters() function implements this procedure, and contains a resolution parameter that sets the ‘granularity’ of the downstream clustering, 
+#with increased values leading to a greater number of clusters.
+brc.seu <- FindNeighbors(brc.seu, dims = 1:15)
+
+# understanding resolution
+brc.seu <- FindClusters(brc.seu, resolution = c(0.1,0.3, 0.5, 0.7, 0.9, 1))
+View(brc.seu@meta.data)
+#clusters can be found using the Idents() function
+head(Idents(brc.seu), 5)
+DimPlot(brc.seu, group.by = "RNA_snn_res.0.5", label = TRUE)
+
+#assigning cell types to clusters:
+Idents(brc.seu) <- brc.seu$RNA_snn_res.0.5
+new.cluster.ids <- c("B_Cells","CD4+ T-cells","CD8+ T-cells","dPVL","Endothelial","Epithelial_Basal","Epithelial_Basal_Cycling","Epithelial_Luminal_Mature","iCAFs","imPVL",
+"myCAFs","Myeloid","Myoepithelial","NK cells","NKT cells","Plasma_Cells","T-cells Cycling","T_cells_unassigned","Tfh cells","T-Regs")
+names(new.cluster.ids) <- levels(brc.seu)
+brc.seu <- RenameIdents(brc.seu, new.cluster.ids)
+DimPlot(brc.seu, reduction = 'umap', label = TRUE, pt.size = 0.2) + NoLegend()
+
+# Calculating Trajectories with Monocle3
+# monocle3 requires cell_data_set object
+
+# 8. convert seurat object to cell_data_set object
+cds <- as.cell_data_set(brc.seu)
+cds
+
+# to get cell metadata
+colData(cds)
+# to gene metdata
+fData(cds)
+#rownames(fData(cds))[1:10]
+
+# since it misses the gene_short_name column, let's add it
+fData(cds)$gene_short_name <- rownames(fData(cds))
+
+# to get counts
+counts(cds)
+
+# 9. Cluster cells and assign partitions:
+#Monocle also calculate ‘partitions’ - these are superclusters of the Louvain/Leiden communties that are found using a kNN pruning method (Seurat)
+partition <- c(rep(1,length(cds@colData@rownames)))
+names(partition) <- cds@colData@rownames
+partition <- as.factor(partition)
+cds@clusters$UMAP$partitions <- partition
+
+#assigning information of clusters
+list_cluster <- brc.seu@active.ident
+cds@clusters$UMAP$clusters <- list_cluster
+
+# Assign UMAP coordinate - cell embeddings
+cds@int_colData@listData$reducedDims$UMAP <- brc.seu@reductions$umap@cell.embeddings
+
+#plot
+cluster.names <- plot_cells(cds,
+           color_cells_by = "cluster",
+           label_groups_by_cluster = FALSE,
+           group_label_size = 5) +
+  scale_color_manual(values = c('red', 'blue', 'green', 'maroon', 'yellow', 'grey', 'cyan', 'pink', 'orange', 'black', 'purple')) +
+  theme(legend.position = "right")
+cluster.names
+
+# 10. Learn trajectory graph:
+#how cells transition through a biological program of gene expression changes in an experiment
+cds <- learn_graph(cds, use_partition = FALSE)
+
+plot_cells(cds,
+           color_cells_by = 'cluster',
+           label_groups_by_cluster = FALSE,
+           label_branch_points = FALSE,
+           label_roots = FALSE,
+           label_leaves = FALSE,
+           group_label_size = 5)
+
+# 11. Order the cells in pseudotime:
+#Pseudotime is a measure of how much progress an individual cell has made through a process such as cell differentiation
+cds <- order_cells(cds, reduction_method = 'UMAP', root_cells = colnames(cds[,clusters(cds) == 'iCAFs']))
+
+
+plot_cells(cds,
+           color_cells_by = 'pseudotime',
+           label_groups_by_cluster = FALSE,
+           label_branch_points = FALSE,
+           label_roots = FALSE,
+           label_leaves = FALSE)
+
+# cells ordered by monocle3 pseudotime
+pseudotime(cds)
+cds$monocle3_pseudotime <- pseudotime(cds)
+data.pseudo <- as.data.frame(colData(cds))
+ggplot(data.pseudo, aes(monocle3_pseudotime, reorder(clusters(cds), monocle3_pseudotime, median), fill = clusters(cds))) + geom_boxplot()
+
+
+
+
